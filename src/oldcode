@@ -1,0 +1,34 @@
+// TODO Need to send Map Start (0.75) packet before state data!!!!!!!!!
+
+                    // let mut packet2: Vec<u8> = vec!(15, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+                    // packet2.append(&mut "1234567890".as_bytes().to_vec());
+                    // packet2.append(&mut "0123456789".as_bytes().to_vec());
+                    // packet2.push(0);
+                    // packet2.append(&mut vec!(0, 0, 0 ,0 , 0, 0, 0, 0, 0, 0, 0, 0, 0 ,0 , 0, 0, 0, 0, 0, 0));
+
+                    let packet: Vec<u8> = vec!(18, 0, 0, 0, 0);
+                    let packet3: Vec<u8> = vec!(19, 0);
+
+                    // println!("{}", packet.len());
+
+                    // let cvoid: *const std::ffi::c_void = &packet as *const _ as *const std::ffi::c_void;
+                    // let cvoid2: *const std::ffi::c_void = &packet2 as *const _ as *const std::ffi::c_void;
+                    // let cvoid3: *const std::ffi::c_void = &packet3 as *const _ as *const std::ffi::c_void;
+
+                    let enet_packet = unsafe { enet::enet_packet_create((&packet[..]).as_ptr() as *const _, 5, enet::_ENetPacketFlag_ENET_PACKET_FLAG_RELIABLE) };
+                    let enet_packet2 = unsafe { enet::enet_packet_create((&packet2[..]).as_ptr() as *const _, 52, enet::_ENetPacketFlag_ENET_PACKET_FLAG_RELIABLE) };
+                    let enet_packet3 = unsafe { enet::enet_packet_create((&packet3[..]).as_ptr() as *const _, 2, enet::_ENetPacketFlag_ENET_PACKET_FLAG_RELIABLE) };
+
+                    println!("{}", enet_packet.is_null());
+                    println!("{}", enet_packet2.is_null());
+                    println!("{}", enet_packet3.is_null());
+
+                    // std::thread::sleep_ms(1000);
+                    
+                    println!("{}", unsafe { enet::enet_peer_send(event.peer, 0, enet_packet) });
+                    // std::thread::sleep_ms(1000);
+                    println!("{}", unsafe { enet::enet_peer_send(event.peer, 0, enet_packet3) });
+                    // std::thread::sleep_ms(1000);
+                    // println!("{}", unsafe { enet::enet_peer_send(event.peer, 0, enet_packet2) });
+
+                    // self.master.major_update();

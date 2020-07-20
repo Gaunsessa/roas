@@ -1,0 +1,152 @@
+use crate::server::packets::*;
+use crate::server::structs::*;
+use crate::color::Color;
+
+use enet_sys as enet;
+use enet::{
+    ENetHost,
+    ENetPeer,
+    _ENetEventType_ENET_EVENT_TYPE_CONNECT as ENET_CONNECT,
+    _ENetEventType_ENET_EVENT_TYPE_DISCONNECT as ENET_DISCONNECT,
+    _ENetEventType_ENET_EVENT_TYPE_RECEIVE as ENET_RECEIVE,
+    _ENetEventType_ENET_EVENT_TYPE_NONE as ENET_NONE,
+};
+
+#[derive(Debug)]
+pub enum ServerError {
+    InitFaild,
+    ServiceFaild,
+    RangeCoderFaild,
+    HostFaild,
+    PacketCreationFaild,
+    PacketSendFaild,
+}
+
+/// AOS 0.75 server instance
+/// 
+/// SAFTEY: All usues of unsafe are checked for errors.
+/// SAFTEY: This will call enet_initialize on creation and enet_deinitialize on drop.
+pub struct Server {
+    host: *mut ENetHost,
+    clients: Vec<*mut ENetPeer>,
+
+    team1: Team,
+    team2: Team,
+}
+
+impl Server {
+    pub fn new() -> Result<Self, ServerError> {
+        neg_to_err(unsafe { enet::enet_initialize() }, ServerError::InitFaild)?;
+        let host = unsafe {
+            enet::enet_host_create(
+                &enet::ENetAddress {
+                    host: u32::from_be_bytes([127, 0, 0, 1]).to_be(),
+                    port: 1273
+                } as *const _,
+                32,
+                2,
+                0,
+                0
+            )
+        };
+
+        if host.is_null() {
+            return Err(ServerError::HostFaild)
+        }
+    
+        neg_to_err(unsafe { enet::enet_host_compress_with_range_coder(host) }, ServerError::RangeCoderFaild)?;
+
+        Ok(Self {
+            host,
+            clients: Vec::new(),
+
+            team1: Team::new("Blue      ", Color::new(0, 0, 255)),
+            team2: Team::new("Red       ", Color::new(255, 0, 0)),
+        })
+    }
+
+    pub fn service(&mut self) -> Result<(), ServerError> {
+        let mut event: enet::ENetEvent = unsafe { std::mem::zeroed() };
+
+        neg_to_err(unsafe { enet_sys::enet_host_service(self.host, &mut event, 1000) }, ServerError::ServiceFaild)?;
+
+        match event.type_ {
+            ENET_NONE => {},
+            ENET_CONNECT => {
+                println!("Connection");
+                if event.data == 3 {
+                    self.send_packet(
+                        MapStart {
+                            map_size: 0,
+                        }, 
+                        event.peer
+                    )?;
+                    
+                    // TODO figure out how to send the world packets
+                    self.send_packet(
+                        MapChuck {
+                            map_data: 0,
+                        }, 
+                        event.peer
+                    )?;
+
+                    self.send_packet(
+                        StateData {
+                            player_id: 0,
+                            fog_color: Color::new(0, 0, 0),
+                            team1: &self.team1,
+                            team2: &self.team2,
+                            gamemode: 1,
+                        },
+                        event.peer
+                    )?;
+
+                    self.clients.push(event.peer);
+                    // println!("{:?}", self.clients);
+                } else {
+                    unsafe {
+                        enet::enet_peer_disconnect(event.peer, 3)
+                    }
+                }
+            },
+            ENET_DISCONNECT => {
+                println!("Disconnection");
+            },
+            ENET_RECEIVE => {
+                println!("Packet Recived");
+            },
+            _ => unreachable!(),
+        };
+
+        Ok(())
+    }
+
+    fn send_packet<const X: usize>(&self, packet: impl Packet<X>, peer: *mut ENetPeer) -> Result<(), ServerError> {
+        let enet_packet = unsafe { enet::enet_packet_create(packet.ser().as_ptr() as *const _, X, enet::_ENetPacketFlag_ENET_PACKET_FLAG_RELIABLE) };
+
+        if enet_packet.is_null() {
+            return Err(ServerError::PacketCreationFaild)
+        }
+
+        neg_to_err(unsafe { enet::enet_peer_send(peer, 0, enet_packet) }, ServerError::PacketSendFaild)?;
+
+        Ok(())
+    }
+}
+
+impl Drop for Server {
+    fn drop(&mut self) {
+        unsafe {
+            enet::enet_host_destroy(self.host);
+            enet::enet_deinitialize();
+        }
+    }
+}
+
+fn neg_to_err(data: i32, error: ServerError) -> Result<(), ServerError> {
+    if data < 0 {
+        Err(error)
+    } else {
+        Ok(())
+    }
+}
