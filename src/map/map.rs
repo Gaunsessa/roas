@@ -1,6 +1,11 @@
 use crate::color::Color;
 // use crate::server::packets::Packet;
 
+// Height = 64, Width/Length = 512
+
+// 512^2 2D array with collums.
+// Collums can be 64 voxels high.
+
 #[derive(Clone, Copy, Debug)]
 pub struct Voxel {
     pub r#type: VoxelType,
@@ -19,14 +24,14 @@ pub struct Map {
 }
 
 impl Map {
-    pub fn from_file() -> Self {
+    // pub fn from_file() -> Self {
         
 
 
-        Self {
+    //     Self {
 
-        }
-    }
+    //     }
+    // }
 
     pub fn empty() -> Self {
         Self {
