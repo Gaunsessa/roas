@@ -94,6 +94,26 @@ pub struct ExistingPlayer {
     pub name: String
 }
 
+impl ServerPacket for ExistingPlayer {
+    fn ser(&self) -> Vec<u8> {
+        let mut data = vec!(
+            9,
+            self.player_id,
+            self.team,
+            self.weapon,
+            self.held_item
+        );
+
+        data.extend_from_slice(&self.kills.to_le_bytes());
+        data.push(self.blue);
+        data.push(self.green);
+        data.push(self.red);
+        data.extend_from_slice(&self.name.as_bytes());
+
+        data
+    }
+}
+
 impl ClientPacket for ExistingPlayer {
     fn der(packet: &[u8]) -> Self {
         Self {
