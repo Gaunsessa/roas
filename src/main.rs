@@ -1,5 +1,4 @@
 #![allow(incomplete_features)]
-#![feature(const_generics)]
 #![feature(box_syntax)]
 
 // mod master;

@@ -97,7 +97,7 @@ impl Server {
 
                     self.send_packet(
                         StateData {
-                            player_id: 0,
+                            player_id: self.clients.len() as u8 - 1,
                             fog_color: Color::new(0, 0, 0),
                             team1: &self.team1,
                             team2: &self.team2,
@@ -105,6 +105,8 @@ impl Server {
                         },
                         event.peer
                     )?;
+
+                    println!("MAP SENT");
 
                     // self.send_packet(
                     //     PositionData {
@@ -115,7 +117,11 @@ impl Server {
                     //     event.peer
                     // )?;
                     
-                    // println!("{:?}", self.clients);
+                    // for client in self.clients.iter() {
+                    //     println!("{:?}", unsafe { (*client.inner).address.host });
+                    // }
+
+                    println!("{:?}", self.clients);
                 } else {
                     unsafe {
                         enet::enet_peer_disconnect(event.peer, 3)
@@ -131,16 +137,29 @@ impl Server {
                 println!("Packet Recived:\n    ID: {}",  data[0]);
 
                 if data[0] == 9 {
-                    println!("{:?}", ExistingPlayer::der(data));
+                    let player_data = ExistingPlayer::der(data);
 
                     self.send_packet(
-                        PositionData {
+                        CreatePlayer {
+                            player_id: player_data.player_id,
+                            weapon: player_data.weapon,
+                            team: player_data.team,
                             x: 0.0,
-                            y: 0.0,
-                            z: 0.0
+                            y: 50.0,
+                            z: 0.0,
+                            name: &player_data.name
                         }, 
                         event.peer
                     )?;
+
+                    // self.send_packet(
+                    //     PositionData {
+                    //         x: 0.0,
+                    //         y: 0.0,
+                    //         z: 0.0
+                    //     }, 
+                    //     event.peer
+                    // )?;
                 }
 
                 // TODO ERROR HANDLE THIS!!!
@@ -152,8 +171,10 @@ impl Server {
         Ok(())
     }
 
-    fn send_packet<const X: usize>(&self, packet: impl ServerPacket<X>, peer: *mut ENetPeer) -> Result<(), ServerError> {
-        let enet_packet = unsafe { enet::enet_packet_create(packet.ser().as_ptr() as *const _, X, enet::_ENetPacketFlag_ENET_PACKET_FLAG_RELIABLE) };
+    fn send_packet(&self, packet: impl ServerPacket, peer: *mut ENetPeer) -> Result<(), ServerError> {
+        let data = packet.ser().into_boxed_slice();
+
+        let enet_packet = unsafe { enet::enet_packet_create((*data).as_ptr() as *const _, data.len(), enet::_ENetPacketFlag_ENET_PACKET_FLAG_RELIABLE) };
 
         if enet_packet.is_null() {
             return Err(ServerError::PacketCreationFaild)

@@ -1,5 +1,6 @@
 use enet_sys::ENetPeer;
 
+#[derive(Debug)]
 pub struct Client {
     pub inner: *mut ENetPeer,
 }

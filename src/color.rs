@@ -17,17 +17,12 @@ impl Color {
     }
 }
 
-impl ServerPacket<3> for Color {
-    fn ser(&self) -> [u8; 3] {
-        let data = vec!(
+impl ServerPacket for Color {
+    fn ser(&self) -> Vec<u8> {
+        vec!(
             self.b,
             self.g,
             self.r,
-        );
-
-        let mut res = [0; 3];
-        res.copy_from_slice(&data[..3]);
-
-        res
+        )
     }
 }
