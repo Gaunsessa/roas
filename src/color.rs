@@ -1,4 +1,4 @@
-use crate::server::packets::Packet;
+use crate::server::packets::ServerPacket;
 
 #[derive(Clone, Copy, Debug)]
 pub struct Color {
@@ -17,7 +17,7 @@ impl Color {
     }
 }
 
-impl Packet<3> for Color {
+impl ServerPacket<3> for Color {
     fn ser(&self) -> [u8; 3] {
         let data = vec!(
             self.b,

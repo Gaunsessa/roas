@@ -1,5 +1,6 @@
 use crate::server::packets::*;
 use crate::server::structs::*;
+use crate::server::client::*;
 use crate::color::Color;
 
 use enet_sys as enet;
@@ -12,6 +13,8 @@ use enet::{
     _ENetEventType_ENET_EVENT_TYPE_NONE as ENET_NONE,
 };
 
+use libflate::zlib;
+
 #[derive(Debug)]
 pub enum ServerError {
     InitFaild,
@@ -20,6 +23,13 @@ pub enum ServerError {
     HostFaild,
     PacketCreationFaild,
     PacketSendFaild,
+    IOFaild,
+}
+
+impl std::convert::From<std::io::Error> for ServerError {
+    fn from(_: std::io::Error) -> Self {
+        ServerError::IOFaild
+    }
 }
 
 /// AOS 0.75 server instance
@@ -28,7 +38,8 @@ pub enum ServerError {
 /// SAFTEY: This will call enet_initialize on creation and enet_deinitialize on drop.
 pub struct Server {
     host: *mut ENetHost,
-    clients: Vec<*mut ENetPeer>,
+    clients: Vec<Client>,
+    map: std::fs::File,
 
     team1: Team,
     team2: Team,
@@ -59,36 +70,30 @@ impl Server {
         Ok(Self {
             host,
             clients: Vec::new(),
+            map: std::fs::File::open("0048.vxl").unwrap(),
 
             team1: Team::new("Blue      ", Color::new(0, 0, 255)),
-            team2: Team::new("Red       ", Color::new(255, 0, 0)),
+            team2: Team::new("Sex       ", Color::new(255, 0, 0)),
         })
     }
 
     pub fn service(&mut self) -> Result<(), ServerError> {
         let mut event: enet::ENetEvent = unsafe { std::mem::zeroed() };
 
-        neg_to_err(unsafe { enet_sys::enet_host_service(self.host, &mut event, 1000) }, ServerError::ServiceFaild)?;
+        // neg_to_err(unsafe { enet_sys::enet_host_service(self.host, &mut event, 1000) }, ServerError::ServiceFaild);
+        // TODO Fix it erroring for one tick after someone connects
+        // println!("{}", unsafe { enet_sys::enet_host_service(self.host, &mut event, 1000) });
+        unsafe { enet_sys::enet_host_service(self.host, &mut event, 1000) };
 
         match event.type_ {
             ENET_NONE => {},
             ENET_CONNECT => {
                 println!("Connection");
                 if event.data == 3 {
-                    self.send_packet(
-                        MapStart {
-                            map_size: 0,
-                        }, 
-                        event.peer
-                    )?;
-                    
-                    // TODO figure out how to send the world packets
-                    self.send_packet(
-                        MapChuck {
-                            map_data: 0,
-                        }, 
-                        event.peer
-                    )?;
+                    // let mut map = std::fs::File::open("testmap.vxl").unwrap();
+                    self.clients.push(Client::new(event.peer));
+
+                    self.send_map(self.clients.len() - 1)?;
 
                     self.send_packet(
                         StateData {
@@ -96,12 +101,20 @@ impl Server {
                             fog_color: Color::new(0, 0, 0),
                             team1: &self.team1,
                             team2: &self.team2,
-                            gamemode: 1,
+                            gamemode: 0,
                         },
                         event.peer
                     )?;
 
-                    self.clients.push(event.peer);
+                    // self.send_packet(
+                    //     PositionData {
+                    //         x: 0.0,
+                    //         y: 0.0,
+                    //         z: 0.0
+                    //     }, 
+                    //     event.peer
+                    // )?;
+                    
                     // println!("{:?}", self.clients);
                 } else {
                     unsafe {
@@ -113,7 +126,25 @@ impl Server {
                 println!("Disconnection");
             },
             ENET_RECEIVE => {
-                println!("Packet Recived");
+                let data: &[u8] = unsafe { std::slice::from_raw_parts((*event.packet).data, (*event.packet).dataLength) };
+
+                println!("Packet Recived:\n    ID: {}",  data[0]);
+
+                if data[0] == 9 {
+                    println!("{:?}", ExistingPlayer::der(data));
+
+                    self.send_packet(
+                        PositionData {
+                            x: 0.0,
+                            y: 0.0,
+                            z: 0.0
+                        }, 
+                        event.peer
+                    )?;
+                }
+
+                // TODO ERROR HANDLE THIS!!!
+                unsafe { enet::enet_packet_destroy(event.packet) };
             },
             _ => unreachable!(),
         };
@@ -121,7 +152,7 @@ impl Server {
         Ok(())
     }
 
-    fn send_packet<const X: usize>(&self, packet: impl Packet<X>, peer: *mut ENetPeer) -> Result<(), ServerError> {
+    fn send_packet<const X: usize>(&self, packet: impl ServerPacket<X>, peer: *mut ENetPeer) -> Result<(), ServerError> {
         let enet_packet = unsafe { enet::enet_packet_create(packet.ser().as_ptr() as *const _, X, enet::_ENetPacketFlag_ENET_PACKET_FLAG_RELIABLE) };
 
         if enet_packet.is_null() {
@@ -129,6 +160,31 @@ impl Server {
         }
 
         neg_to_err(unsafe { enet::enet_peer_send(peer, 0, enet_packet) }, ServerError::PacketSendFaild)?;
+
+        Ok(())
+    }
+
+    fn send_map(&mut self, client_id: usize) -> Result<(), ServerError> {
+        let mut encoder = zlib::Encoder::new(Vec::new())?;
+        std::io::copy(&mut self.map, &mut encoder)?;
+        let data = encoder.finish().into_result()?;
+
+        self.send_packet(
+            MapStart {
+                map_size: data.len() as u32,
+            }, 
+            self.clients[client_id].inner
+        )?;
+        
+        // TODO figure out how to send the world packets
+        for b in data {
+            self.send_packet(
+                MapChuck {
+                    map_data: b,
+                }, 
+                self.clients[client_id].inner
+            )?;
+        }
 
         Ok(())
     }
