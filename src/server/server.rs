@@ -70,7 +70,7 @@ impl Server {
         Ok(Self {
             host,
             clients: Vec::new(),
-            map: std::fs::File::open("0048.vxl").unwrap(),
+            map: std::fs::File::open("testmap.vxl").unwrap(),
 
             team1: Team::new("Blue      ", Color::new(0, 0, 255)),
             team2: Team::new("Sex       ", Color::new(255, 0, 0)),
@@ -117,7 +117,7 @@ impl Server {
                     self.send_packet(
                         StateData {
                             player_id: self.clients.len() as u8,
-                            fog_color: Color::new(255, 0, 0),
+                            fog_color: Color::new(74, 74, 74),
                             team1: &self.team1,
                             team2: &self.team2,
                             gamemode: 0,
@@ -125,7 +125,10 @@ impl Server {
                         event.peer
                     )?;
 
+                    // unsafe { enet::enet_host_flush(self.host) };
+
                     println!("MAP SENT");
+                    println!("{:?}", event.peer);
 
                     // self.send_packet(
                     //     PositionData {
@@ -195,7 +198,7 @@ impl Server {
             _ => unreachable!(),
         };
 
-        unsafe { enet::enet_host_flush(self.host) };
+        // unsafe { enet::enet_host_flush(self.host) };
 
         Ok(())
     }
@@ -215,8 +218,10 @@ impl Server {
     }
 
     fn send_map(&mut self, client: *mut ENetPeer) -> Result<(), ServerError> {
+        // TODO FINISH THE MAP SO WE CAN SEND UPTO DATE MAPS INSTEAD OF RE READING THEM.
+        let mut map = std::fs::File::open("testmap.vxl").unwrap();
         let mut encoder = zlib::Encoder::new(Vec::new())?;
-        std::io::copy(&mut self.map, &mut encoder)?;
+        std::io::copy(&mut map, &mut encoder)?;
         let data = encoder.finish().into_result()?;
 
         self.send_packet(
@@ -234,6 +239,8 @@ impl Server {
                 }, 
                 client
             )?;
+
+            println!("lord");
         }
 
         Ok(())
