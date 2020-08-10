@@ -13,6 +13,7 @@ use enet::{
     _ENetEventType_ENET_EVENT_TYPE_NONE as ENET_NONE,
 };
 
+use std::collections::HashMap;
 use libflate::zlib;
 
 #[derive(Debug)]
@@ -24,6 +25,7 @@ pub enum ServerError {
     PacketCreationFaild,
     PacketSendFaild,
     IOFaild,
+    UnknownPlayerId,
 }
 
 impl std::convert::From<std::io::Error> for ServerError {
@@ -38,8 +40,9 @@ impl std::convert::From<std::io::Error> for ServerError {
 /// SAFTEY: This will call enet_initialize on creation and enet_deinitialize on drop.
 pub struct Server {
     host: *mut ENetHost,
-    clients: Vec<*mut ENetPeer>,
+    clients: HashMap<*mut ENetPeer, Client>,
     map: std::fs::File,
+    players: u8,
 
     team1: Team,
     team2: Team,
@@ -69,127 +72,114 @@ impl Server {
 
         Ok(Self {
             host,
-            clients: Vec::new(),
+            clients: HashMap::new(),
             map: std::fs::File::open("testmap.vxl").unwrap(),
+            players: 0,
 
             team1: Team::new("Blue      ", Color::new(0, 0, 255)),
-            team2: Team::new("Sex       ", Color::new(255, 0, 0)),
+            team2: Team::new("Yes       ", Color::new(255, 0, 0)),
         })
     }
 
     pub fn service(&mut self) -> Result<(), ServerError> {
+        self.broudcast_packet(WorldUpdate::new(&self.clients))?;
+
         let mut event: enet::ENetEvent = unsafe { std::mem::zeroed() };
 
         // neg_to_err(unsafe { enet_sys::enet_host_service(self.host, &mut event, 1000) }, ServerError::ServiceFaild);
         // TODO Fix it erroring for one tick after someone connects
         // println!("{}", unsafe { enet_sys::enet_host_service(self.host, &mut event, 1000) });
         unsafe { enet_sys::enet_host_service(self.host, &mut event, 1) };
+        let peer = event.peer;
 
         match event.type_ {
             ENET_NONE => {},
             ENET_CONNECT => {
                 println!("Connection");
                 if event.data == 3 {
-                    // let mut map = std::fs::File::open("testmap.vxl").unwrap();
-                    
+                    self.send_map(peer)?;
 
-                    // let yes: &mut Client = unsafe { &mut *((*event.peer).data as *mut Client) };
+                    for (_, client) in self.clients.iter() {
+                        // println!("{:?}", client);
 
-                    // println!("{:?}", yes);
-
-                    // for i in self.clients.iter_mut() {
-                    //     let yes: &mut Client = unsafe { &mut *((**i).data as *mut Client) };
-
-                    //     println!("{:?}", unsafe { (**i).data });
-                    //     println!("{:?}", yes);
-                    // }
-
-                    self.send_map(event.peer)?;
-
-                    // std::thread::sleep_ms(1000);
-
-                    for i in self.clients.iter() {
-                        let client: &mut Client = unsafe { &mut *((**i).data as *mut Client) };
-
-                        self.send_packet(ExistingPlayer::from(client), *i)?;
+                        self.send_packet(ExistingPlayer::from(client), peer)?;
                     }
 
                     self.send_packet(
                         StateData {
-                            player_id: self.clients.len() as u8,
+                            player_id: self.players,
                             fog_color: Color::new(74, 74, 74),
                             team1: &self.team1,
                             team2: &self.team2,
                             gamemode: 0,
                         },
-                        event.peer
+                        peer
                     )?;
 
-                    // unsafe { enet::enet_host_flush(self.host) };
-
                     println!("MAP SENT");
-                    println!("{:?}", event.peer);
-
-                    // self.send_packet(
-                    //     PositionData {
-                    //         x: 0.0,
-                    //         y: 0.0,
-                    //         z: 0.0
-                    //     }, 
-                    //     event.peer
-                    // )?;
-                    
-                    // for client in self.clients.iter() {
-                    //     println!("{:?}", unsafe { (*client.inner).address.host });
-                    // }
-
-                    println!("{:?}", self.clients);
+                    // println!("{:?}", peer);
+                    // println!("{:?}", self.clients);
                 } else {
                     unsafe {
-                        enet::enet_peer_disconnect(event.peer, 3)
+                        enet::enet_peer_disconnect(peer, 3)
                     }
                 }
             },
             ENET_DISCONNECT => {
-                unsafe { (*event.peer).data = std::mem::zeroed() };
-                self.clients.retain(|&x| x != event.peer);
+                self.clients.remove(&peer);
+                self.players -= 1;
                 println!("Disconnection");
             },
             ENET_RECEIVE => {
                 let data: &[u8] = unsafe { std::slice::from_raw_parts((*event.packet).data, (*event.packet).dataLength) };
+                let client = self.clients.get_mut(&peer);
+                if let None = client {
+                    if let Packet::ExistingPlayer(data) = Packet::from(data) {
+                        let client = Client::from(data.clone());
+                        println!("{:?}", client);
+                        self.clients.insert(peer, client);
 
-                println!("Packet Recived:\n    ID: {}",  data[0]);
+                        self.broudcast_packet(
+                            CreatePlayer {
+                                player_id: data.player_id,
+                                weapon: data.weapon,
+                                team: data.team,
+                                x: 0.0,
+                                y: 50.0,
+                                z: 0.0,
+                                name: data.name.clone()
+                            }
+                        )?;
 
-                if data[0] == 9 {
-                    let player_data = ExistingPlayer::der(data);
-
-                    self.clients.push(event.peer);
-                    
-                    self.send_packet(
-                        CreatePlayer {
-                            player_id: player_data.player_id,
-                            weapon: player_data.weapon,
-                            team: player_data.team,
-                            x: 0.0,
-                            y: 50.0,
-                            z: 0.0,
-                            name: &player_data.name
-                        }, 
-                        event.peer
-                    )?;
-                    
-                    let mut client = Client::from(player_data);
-                    let client_void = (&mut client as *mut _) as *mut std::ffi::c_void;
-
-                    unsafe { (*event.peer).data = client_void };
-                    // self.send_packet(
-                    //     PositionData {
-                    //         x: 0.0,
-                    //         y: 0.0,
-                    //         z: 0.0
-                    //     }, 
-                    //     event.peer
-                    // )?;
+                        self.players += 1;
+                    } else {
+                        panic!("Client cant send packets without being initalised.")
+                    }
+                } else if let Some(client) = client {
+                    match Packet::from(data) {
+                        Packet::PositionData(data) => {
+                            client.pos.px = data.x;
+                            client.pos.py = data.y;
+                            client.pos.pz = data.z;
+                        },
+                        Packet::OrientationData(data) => {
+                            client.pos.ox = data.x;
+                            client.pos.oy = data.y;
+                            client.pos.oz = data.z;
+                        },
+                        Packet::BlockAction(data) => {
+                            self.broudcast_packet(
+                                data
+                            )?;
+                        },
+                        Packet::ChatMessage(data) => {
+                            self.broudcast_packet(
+                                data
+                            )?;
+                        },
+                        _ => {}//println!("{:?}", Packet::from(data))
+                    }
+                    // println!("{:?}", client);
                 }
 
                 // TODO ERROR HANDLE THIS!!!
@@ -197,6 +187,8 @@ impl Server {
             },
             _ => unreachable!(),
         };
+
+        // self.broudcast_packet(WorldUpdate::new(&self.clients))?;
 
         // unsafe { enet::enet_host_flush(self.host) };
 
@@ -239,11 +231,27 @@ impl Server {
                 }, 
                 client
             )?;
-
-            println!("lord");
         }
 
         Ok(())
+    }
+
+    fn broudcast_packet(&self, packet: impl ServerPacket + Clone) -> Result<(), ServerError> {
+        for (i, _) in self.clients.iter() {
+            self.send_packet(packet.clone(), *i)?;
+        }
+
+        Ok(())
+    }
+
+    fn get_player_from_id(&self, id: u8) -> Result<*mut ENetPeer, ServerError> {
+        for (i, client) in self.clients.iter() {
+            if client.player_id == id {
+                return Ok(*i);
+            }
+        }
+
+        Err(ServerError::UnknownPlayerId)
     }
 }
 
