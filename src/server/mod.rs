@@ -1,6 +1,6 @@
-mod server;
 pub mod client;
-pub mod structs;
 pub mod packets;
+mod server;
+pub mod structs;
 
 pub use server::*;

@@ -1,5 +1,5 @@
-use crate::server::packets::ExistingPlayer;
 use crate::color::Color;
+use crate::server::packets::ExistingPlayer;
 
 #[derive(Clone, Debug)]
 pub struct Client {
@@ -31,7 +31,7 @@ impl PlayerPOS {
             pz: 0.0,
             ox: 0.0,
             oy: 0.0,
-            oz: 0.0
+            oz: 0.0,
         }
     }
 }
@@ -47,7 +47,7 @@ impl std::convert::From<&Client> for ExistingPlayer {
             blue: client.color.b,
             green: client.color.g,
             red: client.color.r,
-            name: client.name.clone()
+            name: client.name.clone(),
         }
     }
 }
@@ -62,7 +62,7 @@ impl std::convert::From<ExistingPlayer> for Client {
             kills: player.kills,
             color: Color::new(player.red, player.green, player.blue),
             name: player.name,
-            pos: PlayerPOS::empty()
+            pos: PlayerPOS::empty(),
         }
     }
 }

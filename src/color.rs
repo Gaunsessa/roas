@@ -9,20 +9,12 @@ pub struct Color {
 
 impl Color {
     pub fn new(r: u8, g: u8, b: u8) -> Self {
-        Color {
-            r,
-            g,
-            b,
-        }
+        Color { r, g, b }
     }
 }
 
 impl ServerPacket for Color {
     fn ser(&self) -> Vec<u8> {
-        vec!(
-            self.b,
-            self.g,
-            self.r,
-        )
+        vec![self.b, self.g, self.r]
     }
 }

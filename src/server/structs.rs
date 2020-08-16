@@ -8,9 +8,6 @@ pub struct Team {
 
 impl Team {
     pub fn new(name: &'static str, color: Color) -> Self {
-        Self {
-            name,
-            color
-        }
+        Self { name, color }
     }
 }
